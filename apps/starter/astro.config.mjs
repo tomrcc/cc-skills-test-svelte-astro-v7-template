@@ -1,0 +1,116 @@
+import {
+  baseAstroConfig,
+  configEnv,
+  postAuditOptions,
+  securityTxt,
+  sitemapI18n,
+  viteSsrConfig,
+} from '@astro-v7/shared/config/astro';
+import { siteCredits } from '@astro-v7/shared/config/site';
+import { validateEnv } from '@astro-v7/shared/utils/env';
+import cloudflare from '@astrojs/cloudflare';
+import svelte from '@astrojs/svelte';
+import postAudit from '@casoon/astro-post-audit';
+import siteFiles from '@casoon/astro-site-files';
+import speedMeasure from '@casoon/astro-speed-measure';
+import structuredData from '@casoon/astro-structured-data';
+import { webVitalsDashboard } from '@casoon/astro-webvitals/integration';
+import tailwindcss from '@tailwindcss/vite';
+import { defineConfig } from 'astro/config';
+import propsForThat from '../../integrations/props-for-that.mjs';
+import { envSchema } from './src/env.ts';
+
+// Routes with `prerender = false` — no file in dist, so sitemap and link audit need them listed.
+const onDemandRoutes = ['/contact/', '/de/contact/'];
+
+const env = validateEnv(envSchema, configEnv(new URL('.env', import.meta.url)));
+
+export default defineConfig({
+  ...baseAstroConfig,
+  site: env.PUBLIC_SITE_URL,
+  adapter: cloudflare(),
+
+  // Fixed, unique port so projects scaffolded from this template don't all default to 4321 —
+  // sharing a port across projects means the browser serves stale cached assets/cookies from
+  // whichever project last ran on it. Change this to a free port when starting a new project
+  // (check other repos under ~/GitHub for ports already in use).
+  server: {
+    host: true,
+    port: 5014,
+  },
+
+  integrations: [
+    webVitalsDashboard({ route: '/web-vitals' }),
+    svelte(),
+    propsForThat({ enabled: true }),
+    siteFiles({
+      sitemap: {
+        exclude: ['/web-vitals/'],
+        sources: [() => onDemandRoutes.map((loc) => ({ loc }))],
+        i18n: sitemapI18n,
+        audit: {
+          warnOnEmpty: true,
+          errorOnDuplicates: true,
+        },
+      },
+      robots: { preset: 'seoOnly', disallow: ['/api/', '/web-vitals/'] },
+      humans: siteCredits,
+      security: securityTxt(env.PUBLIC_SECURITY_CONTACT, env.PUBLIC_SITE_URL),
+      llms: {
+        title: env.PUBLIC_SITE_NAME,
+        description: 'Astro v7 starter with Tailwind v4, Svelte 5 and Cloudflare.',
+        details:
+          'This is a bilingual demonstration template, not a real business. Contact and organization details are placeholders; the contact form does not send mail. robots.txt defines crawler preferences independently of this file.',
+        sections: [
+          {
+            title: 'Pages',
+            links: [
+              { title: 'Home', url: '/', description: 'Starter template overview.' },
+              { title: 'Contact', url: '/contact/', description: 'Example contact form.' },
+              { title: 'German home', url: '/de/', description: 'German localized homepage.' },
+              {
+                title: 'German contact',
+                url: '/de/contact/',
+                description: 'German localized contact form.',
+              },
+            ],
+          },
+          {
+            title: 'Site files',
+            links: [
+              {
+                title: 'Sitemap',
+                url: '/sitemap.xml',
+                description: 'Public pages with language alternates.',
+              },
+              {
+                title: 'Crawler preferences',
+                url: '/robots.txt',
+                description: 'Search engines allowed; known AI crawlers blocked.',
+              },
+              {
+                title: 'Demo credits',
+                url: '/humans.txt',
+                description: 'Example team and technology stack.',
+              },
+            ],
+          },
+        ],
+      },
+    }),
+    structuredData({
+      generateMeta: true,
+      siteName: env.PUBLIC_SITE_NAME,
+      // Recommended-field warnings ask for business data (address, phone, sameAs, …) that a
+      // template can't provide. JSON-LD validity is still checked by post-audit (check_json_ld).
+      warnOnMissingRecommended: false,
+    }),
+    speedMeasure(),
+    postAudit(postAuditOptions(['404.html', 'web-vitals/index.html'], onDemandRoutes)),
+  ],
+
+  vite: {
+    plugins: [tailwindcss()],
+    ssr: viteSsrConfig(['@casoon/astro-webvitals']),
+  },
+});
